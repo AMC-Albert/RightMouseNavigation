@@ -24,10 +24,10 @@ class RightMouseNavigationPreferences(AddonPreferences):
 
     time: FloatProperty(
         name="Time Threshold",
-        description="How long you have hold right mouse to open menu",
-        default=1.0,
-        min=0.1,
-        max=10,
+        description="How long to hold right mouse before auto-activating walk mode (also determines menu timing on release)",
+        default=0.4,
+        min=0.01,
+        max=1,
     )
 
     reset_cursor_on_exit: BoolProperty(
@@ -60,7 +60,7 @@ class RightMouseNavigationPreferences(AddonPreferences):
     walk_mode_focal_length_enable: BoolProperty(
         name="Switch Focal Length while Active",
         description="Enable to switch focal length during walk/fly mode",
-        default=False,
+        default=True,
     )
 
     walk_mode_focal_length: FloatProperty(
@@ -76,7 +76,7 @@ class RightMouseNavigationPreferences(AddonPreferences):
     walk_mode_transition_duration: FloatProperty(
         name="Transition Duration",
         description="Duration of focal length transition in seconds (0 = instant)",
-        default=0.12,
+        default=0.1,
         min=0.0,  # Allow 0 to disable transitions
         max=1.0,
         step=1,
