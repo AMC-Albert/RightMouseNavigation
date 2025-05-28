@@ -147,6 +147,12 @@ class RMN_OT_right_mouse_navigation(Operator):
 
     def callMenu(self, context):
         """Calls the appropriate context menu based on the current mode and selection."""
+        # This should only be called if activation was RMB and it was a short press.
+        prefs = context.preferences.addons[__package__].preferences
+        if prefs.activation_method != 'RMB':
+            # print(\"[RMN callMenu] Attempted to call menu with non-RMB activation. Suppressing.\")
+            return # Do not call menu if not RMB activated
+
         select_mouse = context.window_manager.keyconfigs.active.preferences.select_mouse
         space_type = context.space_data.type
 
@@ -163,7 +169,8 @@ class RMN_OT_right_mouse_navigation(Operator):
 
     def invoke(self, context, event):
         """Initializes the operator state when it's called."""
-        # print(f"[RMN INVOKE] Called in {context.space_data.type if context.space_data else 'Unknown Space'}")
+        prefs = context.preferences.addons[__package__].preferences
+        # print(f\"[RMN INVOKE] Called in {context.space_data.type if context.space_data else 'Unknown Space'}\")
         self._count = 0.0
         self._finished = False
         self._callMenu = False
@@ -172,25 +179,48 @@ class RMN_OT_right_mouse_navigation(Operator):
         self._waiting_for_input = True
         self._navigation_started = False
         self._focal_manager = FocalLengthManager()
-        self._initial_event = event
+        self._initial_event = event # Store the event that triggered the operator
 
         self.view_x = event.mouse_x
         self.view_y = event.mouse_y
+
+        # If activation is not RMB, skip the timed modal logic and go straight to navigation
+        if prefs.activation_method != 'RMB':
+            # print(f\"[RMN INVOKE] Non-RMB activation ({prefs.activation_method}). Attempting direct navigation.\")
+            if self._start_navigation(context):
+                # For non-RMB, we don't use the timer/modal for menu/nav decision.
+                # We go straight to passing through events to the walk modal.
+                # The walk modal itself handles its lifecycle.
+                # This operator instance effectively becomes a passthrough invoker for walk.
+                return {'PASS_THROUGH'} 
+            # print(f\"[RMN INVOKE] Direct navigation failed for {prefs.activation_method}. Cancelling.\")
+            self._perform_final_cleanup(context) # Cleanup if nav start fails
+            return {'CANCELLED'}
+
+        # For RMB, proceed with existing execute logic to start the modal timer
         return self.execute(context)
 
     def execute(self, context):
-        """Sets up the modal timer if in the 3D View."""
+        """Sets up the modal timer if in the 3D View (for RMB activation)."""
+        # This method is now primarily for RMB timed activation.
+        # Non-RMB methods will try to start navigation directly in invoke().
+        prefs = context.preferences.addons[__package__].preferences
+        if prefs.activation_method != 'RMB':
+            # This should ideally not be reached if invoke() handles non-RMB correctly.
+            # print(\"[RMN EXECUTE] Execute called for non-RMB. This is unexpected. Operator should have finished or passed through.\")
+            return {'CANCELLED'} # Or FINISHED, depending on desired state.
+
         space_type = context.space_data.type if context.space_data else None
-        # print(f"[RMN EXECUTE] space_type: {space_type}")
+        # print(f\"[RMN EXECUTE RMB] space_type: {space_type}\")
 
         if space_type == "VIEW_3D":
             wm = context.window_manager
             self._timer = wm.event_timer_add(0.02, window=context.window) # 50 FPS timer
             wm.modal_handler_add(self)
-            # print(f"[RMN EXECUTE] 3D View timer created: {self._timer}")
+            # print(f\"[RMN EXECUTE RMB] 3D View timer created: {self._timer}\")
             return {"RUNNING_MODAL"}
 
-        # print(f"[RMN EXECUTE] No modal conditions met for {space_type}, returning FINISHED")
+        # print(f\"[RMN EXECUTE RMB] No modal conditions met for {space_type}, returning FINISHED\")
         return {"FINISHED"} # Default for non-3D view contexts
 
     def _start_navigation(self, context):
