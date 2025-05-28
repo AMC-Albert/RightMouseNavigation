@@ -196,16 +196,29 @@ class RMN_OT_right_mouse_navigation(Operator):
     def _start_navigation(self, context):
         """Attempts to start Blender's walk/fly navigation."""
         addon_prefs = context.preferences.addons[__package__].preferences
-        disable_camera_nav = addon_prefs.disable_camera_navigation
+        enable_camera_nav = addon_prefs.enable_camera_navigation
+        only_if_locked = addon_prefs.camera_nav_only_if_locked
 
         if not context.space_data or not context.space_data.region_3d:
             return False # Cannot navigate without 3D region data
 
         view_perspective_type = context.space_data.region_3d.view_perspective
 
-        if view_perspective_type == "CAMERA" and disable_camera_nav:
-            # print("[RMN] Navigation in Camera view disabled by user preference.")
-            return False
+        if view_perspective_type == "CAMERA":
+            if not enable_camera_nav:
+                # Navigation in camera view is explicitly disabled.
+                # print(\"[RMN] Navigation in Camera view disabled by user preference (enable_camera_navigation is False).\")
+                return False
+            
+            # At this point, enable_camera_nav is True.
+            # Now check the 'Only when Camera is Locked to View' sub-toggle.
+            if only_if_locked:
+                if not context.space_data.lock_camera:
+                    # Sub-toggle is on, but camera is not locked to view.
+                    # print(\"[RMN] Navigation in Camera view disabled: 'Only when Camera is Locked to View' is ON, but camera is not locked.\")
+                    return False
+                # else: Navigation allowed (sub-toggle on, camera locked)
+            # else: Navigation allowed (sub-toggle off, lock_camera state doesn't matter for this check)
 
         try:
             if self._focal_manager:

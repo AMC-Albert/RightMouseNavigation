@@ -24,10 +24,16 @@ class RightMouseNavigationPreferences(AddonPreferences):
         default=True,
     )
 
-    disable_camera_navigation: BoolProperty(
-        name="Disable Navigation for Camera View",
-        description="Enable if you only want to navigate your scene, and not affect Camera Transform",
-        default=False,
+    enable_camera_navigation: BoolProperty(
+        name="Enable Navigation in Camera View",
+        description="Enable to allow navigation while in camera view. If disabled, navigation will not affect the camera's transform or view.",
+        default=True,
+    )
+
+    camera_nav_only_if_locked: BoolProperty(
+        name="Only when Camera is Locked to View",
+        description="If enabled, navigation in camera view is only active when Blender's 'Lock Camera to View' is also active.",
+        default=True,
     )
 
     walk_mode_focal_length_enable: BoolProperty(
@@ -64,15 +70,18 @@ class RightMouseNavigationPreferences(AddonPreferences):
         box_timing = row1.box()
         box_timing.label(text="Menu / Movement", icon="DRIVER_DISTANCE") # Restored original label
         box_timing.prop(self, "time")
-        # disable_camera_navigation is removed from this box
+        # enable_camera_navigation is removed from this box
 
         # The View box that was previously here is moved to the next row.
 
         row2 = layout.row() # Second row for Camera and View settings
 
         box_camera = row2.box() # Camera settings, in the old "Cursor" slot
-        box_camera.label(text="Camera", icon="CAMERA_DATA")
-        box_camera.prop(self, "disable_camera_navigation")
+        box_camera.label(text="Camera Navigation", icon="CAMERA_DATA") # Updated label
+        box_camera.prop(self, "enable_camera_navigation")
+        if self.enable_camera_navigation:
+            box_camera.prop(self, "camera_nav_only_if_locked")
+
 
         box_view = row2.box() # View settings, next to Camera settings
         box_view.label(text="View", icon="VIEW3D")
