@@ -57,6 +57,33 @@ class RightMouseNavigationPreferences(AddonPreferences):
         default=False,
     )
 
+    walk_mode_focal_length_enable: BoolProperty(
+        name="Switch Focal Length while Active",
+        description="Enable to switch focal length during walk/fly mode",
+        default=False,
+    )
+
+    walk_mode_focal_length: FloatProperty(
+        name="Focal Length",
+        description="Focal length for the viewport during walk/fly mode.",
+        default=30.0,
+        min=0.0,
+        max=250.0,
+        subtype='UNSIGNED',
+        unit='CAMERA'
+    )
+
+    walk_mode_transition_duration: FloatProperty(
+        name="Transition Duration",
+        description="Duration of focal length transition in seconds (0 = instant)",
+        default=0.12,
+        min=0.0,  # Allow 0 to disable transitions
+        max=1.0,
+        step=1,
+        precision=2,
+        subtype='TIME'
+    )
+
     def draw(self, context):
         layout = self.layout
 
@@ -75,6 +102,10 @@ class RightMouseNavigationPreferences(AddonPreferences):
         box = row.box()
         box.label(text="View", icon="VIEW3D")
         box.prop(self, "return_to_ortho_on_exit")
+        box.prop(self, "walk_mode_focal_length_enable")  # New toggle above the slider
+        if self.walk_mode_focal_length_enable:
+            box.prop(self, "walk_mode_focal_length") # Only show slider if enabled
+            box.prop(self, "walk_mode_transition_duration") # Show transition duration setting
 
         row = layout.row()
         box = row.box()

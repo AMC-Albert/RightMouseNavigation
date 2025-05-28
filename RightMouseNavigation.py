@@ -1,5 +1,6 @@
 import bpy
 from bpy.types import Operator
+from .FocalLengthManager import FocalLengthManager
 
 
 class RMN_OT_right_mouse_navigation(Operator):
@@ -16,6 +17,8 @@ class RMN_OT_right_mouse_navigation(Operator):
     _callMenu = False
     _ortho = False
     _back_to_ortho = False
+    _focal_manager = None
+
     menu_by_mode = {
         "OBJECT": "VIEW3D_MT_object_context_menu",
         "EDIT_MESH": "VIEW3D_MT_edit_mesh_context_menu",
@@ -32,6 +35,39 @@ class RMN_OT_right_mouse_navigation(Operator):
         "SCULPT": "VIEW3D_PT_sculpt_context_menu",
     }
 
+    def _reset_cursor_action(self, context):
+        area = context.area
+        x = area.x
+        y = area.y
+        x += int(area.width / 2)
+        y += int(area.height / 2)
+        bpy.context.window.cursor_warp(x, y)
+
+    def _perform_final_cleanup(self, context):
+        addon_prefs = context.preferences.addons[__package__].preferences
+        space_type = context.space_data.type
+
+        # Remove timer if it hasn't been removed yet
+        if self._timer:
+            wm = context.window_manager
+            wm.event_timer_remove(self._timer)
+            self._timer = None
+
+        if self._callMenu:
+            if addon_prefs.reset_cursor_on_exit and not space_type == "NODE_EDITOR":
+                self._reset_cursor_action(context)
+            self.callMenu(context)
+        else:
+            if addon_prefs.reset_cursor_on_exit:
+                self._reset_cursor_action(context)
+
+        if self._back_to_ortho:
+            bpy.ops.view3d.view_persportho()
+
+        # Use focal manager for cleanup
+        if self._focal_manager:
+            self._focal_manager.cleanup(context, addon_prefs)
+
     def modal(self, context, event):
         preferences = context.preferences
         addon_prefs = preferences.addons[__package__].preferences
@@ -39,40 +75,45 @@ class RMN_OT_right_mouse_navigation(Operator):
 
         space_type = context.space_data.type
 
-        if space_type == "VIEW_3D":
+        if space_type == "VIEW_3D" and not self._finished:
             # Check if the Viewport is Perspective or Orthographic
             if bpy.context.region_data.is_perspective:
                 self._ortho = False
             else:
                 self._back_to_ortho = addon_prefs.return_to_ortho_on_exit
 
-        # The _finished Boolean acts as a flag to exit the modal loop,
-        # it is not made True until after the cancel function is called
+        # Always handle TIMER events first, even when finished
+        if event.type == "TIMER":
+            # Handle focal length transitions (both entry and exit)
+            if self._focal_manager and space_type == "VIEW_3D":
+                # Store the exit transition state before update (it gets cleared during update)
+                was_exit_transition = self._focal_manager.is_exit_transition
+                transition_completed = self._focal_manager.update_transition(context)
+                
+                # If exit transition completed and we're finished, clean up and exit
+                if transition_completed and self._finished and was_exit_transition:
+                    self._perform_final_cleanup(context)
+                    return {"CANCELLED"}
+            
+            if not self._finished and self._count <= addon_prefs.time:
+                self._count += 0.1
+            
+            # Always return PASS_THROUGH for TIMER events to ensure consistent processing
+            return {"PASS_THROUGH"}
+
+        # Handle the finished state after processing transitions
         if self._finished:
-
-            def reset_cursor():
-                # Reset blender window cursor to previous position
-                area = context.area
-                x = area.x
-                y = area.y
-                x += int(area.width / 2)
-                y += int(area.height / 2)
-                bpy.context.window.cursor_warp(x, y)
-
-            if self._callMenu:
-                # Always reset the cursor if menu is called, as that implies a canceled navigation
-                if addon_prefs.reset_cursor_on_exit and not space_type == "NODE_EDITOR":
-                    reset_cursor()
-                self.callMenu(context)
+            # If a transition is currently running, let it continue
+            if self._focal_manager and self._focal_manager.is_transitioning:
+                return {"PASS_THROUGH"}
+            
+            # Check if an exit transition needs to be started
+            if self._focal_manager and self._focal_manager.start_exit_transition(context, addon_prefs):
+                return {"PASS_THROUGH"}
             else:
-                # Exit of a full navigation. Only reset the cursor if the preference is enabled
-                if addon_prefs.reset_cursor_on_exit:
-                    reset_cursor()
-
-            if self._back_to_ortho:
-                bpy.ops.view3d.view_persportho()
-
-            return {"CANCELLED"}
+                # No transition needed or already completed
+                self._perform_final_cleanup(context)
+                return {"CANCELLED"}
 
         if space_type == "VIEW_3D" or space_type == "NODE_EDITOR" and enable_nodes:
             if event.type in {"RIGHTMOUSE"}:
@@ -89,9 +130,6 @@ class RMN_OT_right_mouse_navigation(Operator):
                     self._finished = True
                     return {"PASS_THROUGH"}
 
-            if event.type == "TIMER":
-                if self._count <= addon_prefs.time:
-                    self._count += 0.1
             return {"PASS_THROUGH"}
 
     def callMenu(self, context):
@@ -121,6 +159,14 @@ class RMN_OT_right_mouse_navigation(Operator):
                 bpy.ops.view3d.select("INVOKE_DEFAULT")
 
     def invoke(self, context, event):
+        # Reset state variables
+        self._count = 0
+        self._finished = False
+        self._callMenu = False
+        self._ortho = False
+        self._back_to_ortho = False
+        self._focal_manager = FocalLengthManager()
+
         # Store Blender cursor position
         self.view_x = event.mouse_x
         self.view_y = event.mouse_y
@@ -140,6 +186,10 @@ class RMN_OT_right_mouse_navigation(Operator):
         if space_type == "VIEW_3D":
             if not (view == "CAMERA" and disable_camera):
                 try:
+                    # Start focal length transition if enabled
+                    if self._focal_manager:
+                        self._focal_manager.start_entry_transition(context, addon_prefs)
+                    
                     bpy.ops.view3d.walk("INVOKE_DEFAULT")
                     # Adding the timer and starting the loop
                     wm = context.window_manager
@@ -165,5 +215,26 @@ class RMN_OT_right_mouse_navigation(Operator):
             return {"FINISHED"}
 
     def cancel(self, context):
-        wm = context.window_manager
-        wm.event_timer_remove(self._timer)
+        # Handle interrupted focal length transitions first
+        if self._focal_manager:
+            addon_prefs = context.preferences.addons[__package__].preferences
+            if self._focal_manager.is_transitioning and not self._focal_manager.is_exit_transition:
+                # Entry transition was interrupted, restore original immediately
+                self._focal_manager.force_restore_original(context, addon_prefs)
+        
+        # Check if exit transition is needed and adjust timer frequency
+        if (self._focal_manager and 
+            self._focal_manager.original_lens is not None and
+            self._focal_manager.should_change_focal_length(context.preferences.addons[__package__].preferences)):
+            # Need exit transition - use higher frequency timer for smoother animation
+            wm = context.window_manager
+            if self._timer:
+                wm.event_timer_remove(self._timer)
+            # Use 60 FPS timer for smooth exit transition
+            self._timer = wm.event_timer_add(0.016, window=context.window)
+        else:
+            # No exit transition needed - remove timer normally
+            wm = context.window_manager
+            if self._timer:
+                wm.event_timer_remove(self._timer)
+                self._timer = None
