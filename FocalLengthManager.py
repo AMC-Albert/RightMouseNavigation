@@ -49,40 +49,38 @@ class FocalLengthManager:
         if not self.should_change_focal_length(addon_prefs):
             return
         
-        # Update activity time
         FocalLengthManager._last_activity_time = time.time()
-        
         walk_focal_length = addon_prefs.walk_mode_focal_length
         current_lens = context.space_data.lens
         
-        # Store the true original lens only once globally, and only if we're not already in a transition
-        # Be very conservative - only store original if:
-        # 1. No global original exists yet
-        # 2. We're not transitioning
-        # 3. Current lens is significantly different from walk lens (not mid-transition)
-        # 4. No session is active OR current lens is reasonable
-        if (FocalLengthManager._global_true_original_lens is None and 
-            not self.is_transitioning and
-            abs(current_lens - walk_focal_length) > 15.0):  # Much larger threshold
+        # If no global session is active, this is a fresh start.
+        # Capture the current lens as the true original for this new session.
+        if not FocalLengthManager._global_walk_mode_session_active:
             FocalLengthManager._global_true_original_lens = current_lens
+            # print(f"[FML Entry] New session. Captured global true original: {current_lens}")
+
+        # Now, set the instance's original lens.
+        # If _global_true_original_lens was set (either just now or from a continuing session), use it.
+        if FocalLengthManager._global_true_original_lens is not None:
+            self.true_original_lens = FocalLengthManager._global_true_original_lens
+            self.original_lens = self.true_original_lens # Instance's original for this transition
+            # print(f"[FML Entry] Using global true original for instance: {self.true_original_lens}")
+        else:
+            # This case implies _global_walk_mode_session_active was True,
+            # but _global_true_original_lens was None, or _global_walk_mode_session_active was False
+            # and _global_true_original_lens somehow didn't get set above.
+            # This indicates an inconsistent state. To be safe, capture current_lens.
             self.true_original_lens = current_lens
             self.original_lens = current_lens
-            FocalLengthManager._global_walk_mode_session_active = True
-        else:
-            # Always use the existing global original if it exists
-            if FocalLengthManager._global_true_original_lens is not None:
-                self.true_original_lens = FocalLengthManager._global_true_original_lens
-                self.original_lens = FocalLengthManager._global_true_original_lens
-                FocalLengthManager._global_walk_mode_session_active = True
-        
-        # Mark that we're attempting to activate walk mode
-        self.walk_mode_ever_activated = True
+            FocalLengthManager._global_true_original_lens = current_lens # Ensure global is also updated
+            # print(f"[FML Entry] Fallback/Inconsistent State: Captured global and instance original: {current_lens}")
+
+        # Mark that a walk mode session is now active (or continues to be active)
         FocalLengthManager._global_walk_mode_session_active = True
         
-        # Reset exit transition flag when starting entry transition
+        self.walk_mode_ever_activated = True
         self.exit_transition_attempted = False
         
-        # Only transition if there's a meaningful difference
         if abs(current_lens - walk_focal_length) > 0.001:
             # Check if transitions are disabled (duration = 0)
             if addon_prefs.walk_mode_transition_duration == 0:
@@ -218,22 +216,24 @@ class FocalLengthManager:
             self.is_transitioning = False
     
     def cleanup(self, context, addon_prefs):
-        """Clean up focal length state, restoring original if needed"""
-        self.is_transitioning = False
-        
-        # Use true_original_lens if available, fallback to original_lens
-        target_lens = self.true_original_lens if self.true_original_lens is not None else self.original_lens
-        
-        # Final restoration check
-        if (target_lens is not None and 
-            context.space_data.type == "VIEW_3D" and
-            self.should_change_focal_length(addon_prefs)):
-            context.space_data.lens = target_lens
-        
-        # Only clear global state if enough time has passed since last activity
-        if self._should_clear_global_state():
+        """Final cleanup actions for the focal length manager"""
+        # Always mark the session as inactive when cleanup is called,
+        # as this signifies the end of the current operator's interaction.
+        FocalLengthManager._global_walk_mode_session_active = False
+        # print("[FML Cleanup] Session marked as inactive.")
+
+        # If not transitioning and enough time has passed, clear global state for the lens value
+        if not self.is_transitioning and self._should_clear_global_state():
+            # print("[FML Cleanup] Clearing global true original lens due to inactivity.")
+            # clear_global_state also sets _global_walk_mode_session_active to False, which is fine.
             self.clear_global_state()
         
-        # Instance cleanup
-        self._cleanup_after_exit()
-        # Don't reset exit_transition_attempted here - let it persist until operator is completely done
+        # Fallback: If an exit transition was attempted but didn't complete,
+        # and we're not currently transitioning, force restore.
+        # This handles cases where the modal operator might terminate abruptly.
+        elif self.exit_transition_attempted and not self.is_transitioning:
+            if self.true_original_lens is not None and self.should_change_focal_length(addon_prefs):
+                # print("[FML Cleanup] Forcing restore due to incomplete exit transition.")
+                self.force_restore_original(context, addon_prefs)
+            # print("[FML Cleanup] Clearing global state after forced restore.")
+            self.clear_global_state() # Ensure global state is cleared after forced restore
