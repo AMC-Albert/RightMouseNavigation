@@ -1,4 +1,4 @@
-from .Preferences import RightMouseNavigationPreferences
+from .Preferences import RightMouseNavigationPreferences, update_node_keymap
 from .RightMouseNavigation import RMN_OT_right_mouse_navigation
 import bpy
 
@@ -19,10 +19,17 @@ def register():
 
         km2 = addon_kc.keymaps.new(name="Node Editor", space_type="NODE_EDITOR")
         kmi2 = km2.keymap_items.new("rmn.right_mouse_navigation", "RIGHTMOUSE", "PRESS")
-        kmi2.active = False
+        kmi2.active = False  # Will be set by update_node_keymap
 
         addon_keymaps.append((km, kmi))
         addon_keymaps.append((km2, kmi2))
+
+        # Apply current preference state to node editor keymap
+        try:
+            prefs = bpy.context.preferences.addons[__package__].preferences
+            update_node_keymap(prefs, bpy.context)
+        except:
+            pass  # Preferences might not be fully loaded yet
 
         active_kc = wm.keyconfigs.active
 
@@ -73,6 +80,14 @@ def register():
 
 def unregister():
     if not bpy.app.background:
+        # Disable node editor navigation before unregistering
+        try:
+            prefs = bpy.context.preferences.addons[__package__].preferences
+            prefs.enable_for_node_editors = False
+            update_node_keymap(prefs, bpy.context)
+        except:
+            pass
+
         bpy.utils.unregister_class(RMN_OT_right_mouse_navigation)
         bpy.utils.unregister_class(RightMouseNavigationPreferences)
 

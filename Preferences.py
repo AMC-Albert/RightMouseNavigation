@@ -7,16 +7,40 @@ from bpy.types import AddonPreferences
 
 
 def update_node_keymap(self, context):
+    print(f"[NODE KEYMAP DEBUG] update_node_keymap called with enable_for_node_editors: {self.enable_for_node_editors}")
+    
     wm = context.window_manager
-    active_kc = wm.keyconfigs.active
-    for key in active_kc.keymaps["Node Editor"].keymap_items:
-        if key.idname == "wm.call_menu" and key.type == "RIGHTMOUSE":
-            key.active = not key.active
-
+    
+    # Update our addon's Node Editor keymap item
     addon_kc = wm.keyconfigs.addon
-    for key in addon_kc.keymaps["Node Editor"].keymap_items:
-        if key.idname == "rmn.right_mouse_navigation" and key.type == "RIGHTMOUSE":
-            key.active = not key.active
+    if addon_kc and "Node Editor" in addon_kc.keymaps:
+        km = addon_kc.keymaps["Node Editor"]
+        for kmi in km.keymap_items:
+            if kmi.idname == "rmn.right_mouse_navigation" and kmi.type == "RIGHTMOUSE":
+                kmi.active = self.enable_for_node_editors
+                print(f"[NODE KEYMAP DEBUG] Set RMN Node Editor keymap to: {kmi.active}")
+                break
+        else:
+            print(f"[NODE KEYMAP DEBUG] RMN keymap item not found in addon keyconfig")
+    else:
+        print(f"[NODE KEYMAP DEBUG] Node Editor keymap not found in addon keyconfig")
+    
+    # Update Blender's default Node Editor RMB menu
+    active_kc = wm.keyconfigs.active
+    if active_kc and "Node Editor" in active_kc.keymaps:
+        km = active_kc.keymaps["Node Editor"]
+        for kmi in km.keymap_items:
+            if kmi.idname == "wm.call_menu" and kmi.type == "RIGHTMOUSE":
+                kmi.active = not self.enable_for_node_editors
+                print(f"[NODE KEYMAP DEBUG] Set Blender default Node Editor menu to: {kmi.active}")
+                break
+        else:
+            print(f"[NODE KEYMAP DEBUG] Blender default menu keymap not found")
+    else:
+        print(f"[NODE KEYMAP DEBUG] Node Editor keymap not found in active keyconfig")
+
+    # Refresh keymaps
+    wm.keyconfigs.update()
 
 
 class RightMouseNavigationPreferences(AddonPreferences):
@@ -25,7 +49,7 @@ class RightMouseNavigationPreferences(AddonPreferences):
     time: FloatProperty(
         name="Time Threshold",
         description="How long to hold right mouse before auto-activating walk mode (also determines menu timing on release)",
-        default=0.4,
+        default=0.1,
         min=0.01,
         max=1,
     )

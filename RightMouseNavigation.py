@@ -85,6 +85,53 @@ class RMN_OT_right_mouse_navigation(Operator):
         space_type = context.space_data.type
         # print(f"[RMN DEBUG] Event: {event.type} ({event.value})") # General log if needed
 
+        # Handle events for node editor FIRST - before general processing
+        if space_type == "NODE_EDITOR" and enable_nodes:
+            if event.type in {"RIGHTMOUSE"}:
+                if event.value in {"RELEASE"}:
+                    context.window.cursor_modal_restore()
+                    
+                    # Direct menu handling for node editor
+                    if self._count < addon_prefs.time:
+                        # Call menu immediately
+                        self.callMenu(context)
+                    
+                    # Simple cleanup for node editor
+                    wm = context.window_manager
+                    if self._timer:
+                        wm.event_timer_remove(self._timer)
+                        self._timer = None
+                    
+                    # Reset cursor if needed
+                    if addon_prefs.reset_cursor_on_exit:
+                        self._reset_cursor_action(context)
+                    
+                    return {"FINISHED"}
+            
+            # For node editor, start pan after threshold time
+            if event.type == "TIMER":
+                if self._count >= addon_prefs.time and not self._navigation_started:
+                    # Start panning mode after threshold
+                    try:
+                        bpy.ops.view2d.pan("INVOKE_DEFAULT")
+                        self._navigation_started = True
+                        # Remove timer once panning starts - no longer needed
+                        wm = context.window_manager
+                        if self._timer:
+                            wm.event_timer_remove(self._timer)
+                            self._timer = None
+                        return {"PASS_THROUGH"}
+                    except Exception as e:
+                        print(f"[NODE DEBUG] Failed to start pan: {e}")
+                
+                # Only increment count if navigation hasn't started yet
+                if not self._finished and not self._navigation_started:
+                    self._count += 0.02
+                    
+                return {"PASS_THROUGH"}
+
+            return {"PASS_THROUGH"}
+
         # Handle waiting state - looking for navigation input OR time threshold
         if self._waiting_for_input and space_type == "VIEW_3D":
             # Check for navigation key presses (immediate activation)
@@ -121,7 +168,7 @@ class RMN_OT_right_mouse_navigation(Operator):
                 return {"PASS_THROUGH"}
 
         # Always handle TIMER events
-        if event.type == "TIMER":
+        if event.type == "TIMER" and space_type != "NODE_EDITOR":
             # Check if we should auto-activate walk mode based on time threshold
             # Use the same threshold as menu timing for consistency
             auto_activation_threshold = addon_prefs.time
@@ -170,43 +217,6 @@ class RMN_OT_right_mouse_navigation(Operator):
                 self._perform_final_cleanup(context)
                 return {"CANCELLED"}
 
-        # Handle events for node editor
-        if space_type == "NODE_EDITOR" and enable_nodes:
-            if event.type in {"RIGHTMOUSE"}:
-                if event.value in {"RELEASE"}:
-                    context.window.cursor_modal_restore()
-                    
-                    # Direct menu handling for node editor
-                    if self._count < addon_prefs.time:
-                        # Call menu immediately
-                        self.callMenu(context)
-                    
-                    # Simple cleanup for node editor
-                    wm = context.window_manager
-                    if self._timer:
-                        wm.event_timer_remove(self._timer)
-                        self._timer = None
-                    
-                    # Reset cursor if needed
-                    if addon_prefs.reset_cursor_on_exit:
-                        self._reset_cursor_action(context)
-                    
-                    return {"FINISHED"}
-            
-            # For node editor, start pan after threshold time
-            if event.type == "TIMER":
-                if self._count >= addon_prefs.time and not self._navigation_started:
-                    # Start panning mode after threshold
-                    bpy.ops.view2d.pan("INVOKE_DEFAULT")
-                    self._navigation_started = True
-                    return {"PASS_THROUGH"}
-                
-                # Always increment count
-                if not self._finished:
-                    self._count += 0.01
-
-            return {"PASS_THROUGH"}
-
         # If we're still waiting and not in any active state, pass through other events
         return {"PASS_THROUGH"}
 
@@ -237,6 +247,8 @@ class RMN_OT_right_mouse_navigation(Operator):
                 bpy.ops.view3d.select("INVOKE_DEFAULT")
 
     def invoke(self, context, event):
+        print(f"[INVOKE DEBUG] Called in {context.space_data.type}")
+        
         # Reset state variables
         self._count = 0
         self._finished = False
@@ -247,8 +259,6 @@ class RMN_OT_right_mouse_navigation(Operator):
         self._navigation_started = False
         self._focal_manager = FocalLengthManager()
         
-        # Remove the hardcoded threshold - now using preference
-
         # Store Blender cursor position
         self.view_x = event.mouse_x
         self.view_y = event.mouse_y
@@ -260,6 +270,7 @@ class RMN_OT_right_mouse_navigation(Operator):
         enable_nodes = addon_prefs.enable_for_node_editors
 
         space_type = context.space_data.type
+        print(f"[EXECUTE DEBUG] space_type: {space_type}, enable_nodes: {enable_nodes}")
 
         # Start in waiting mode instead of immediately starting navigation
         if space_type == "VIEW_3D":
@@ -271,18 +282,23 @@ class RMN_OT_right_mouse_navigation(Operator):
             wm = context.window_manager
             self._timer = wm.event_timer_add(0.02, window=context.window)
             wm.modal_handler_add(self)
+            print(f"[EXECUTE DEBUG] 3D View timer created: {self._timer}")
             return {"RUNNING_MODAL"}
 
         elif space_type == "NODE_EDITOR" and enable_nodes:
-            # For node editor, DON'T start panning immediately - handle it in modal
+            # For node editor, use same timer frequency as 3D view for consistency
             wm = context.window_manager
-            self._timer = wm.event_timer_add(0.01, window=context.window)
+            self._timer = wm.event_timer_add(0.02, window=context.window)
             wm.modal_handler_add(self)
+            print(f"[EXECUTE DEBUG] Node Editor timer created: {self._timer}")
             return {"RUNNING_MODAL"}
 
         elif space_type == "IMAGE_EDITOR":
             bpy.ops.wm.call_panel(name="VIEW3D_PT_paint_texture_context_menu")
             return {"FINISHED"}
+        
+        print(f"[EXECUTE DEBUG] No conditions met, returning FINISHED")
+        return {"FINISHED"}
 
     def _start_navigation(self, context):
         """Start walk/fly navigation mode and focal length transition"""
