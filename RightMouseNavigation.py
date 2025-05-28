@@ -44,13 +44,6 @@ class RMN_OT_right_mouse_navigation(Operator):
         "SCULPT": "VIEW3D_PT_sculpt_context_menu",
     }
 
-    def _reset_cursor_action(self, context):
-        """Resets the mouse cursor to the center of the current area."""
-        area = context.area
-        x = area.x + int(area.width / 2)
-        y = area.y + int(area.height / 2)
-        context.window.cursor_warp(x, y)
-
     def _perform_final_cleanup(self, context):
         """Performs all necessary cleanup actions when the operator finishes or is cancelled."""
         addon_prefs = context.preferences.addons[__package__].preferences
@@ -60,11 +53,7 @@ class RMN_OT_right_mouse_navigation(Operator):
             self._timer = None
 
         if self._callMenu:
-            if addon_prefs.reset_cursor_on_exit:
-                self._reset_cursor_action(context)
             self.callMenu(context)
-        elif addon_prefs.reset_cursor_on_exit: # Simplified condition
-            self._reset_cursor_action(context)
 
         if self._back_to_ortho:
             bpy.ops.view3d.view_persportho()
@@ -83,11 +72,6 @@ class RMN_OT_right_mouse_navigation(Operator):
                     # print(f"[RMN DEBUG] Error removing main timer: {e}")
                     pass
                 self._timer = None
-            try:
-                context.window.cursor_modal_restore()
-            except Exception: # pylint: disable=broad-except
-                # print(f"[RMN DEBUG] Error restoring cursor modal: {e}")
-                pass
             return {'CANCELLED'}
 
         addon_prefs = context.preferences.addons[__package__].preferences
@@ -105,7 +89,7 @@ class RMN_OT_right_mouse_navigation(Operator):
                     return {"CANCELLED"}
 
                 if event.type == "RIGHTMOUSE" and event.value == "RELEASE":
-                    context.window.cursor_modal_restore()
+                    # context.window.cursor_modal_restore() # Cursor restoration is now implicit or handled by Blender
                     if self._count < addon_prefs.time:
                         self._callMenu = True
                     self.cancel(context) # Triggers cleanup via _finished flag
@@ -117,7 +101,7 @@ class RMN_OT_right_mouse_navigation(Operator):
                 # indicates walk mode has ended.
                 if event.type not in {"TIMER", "MOUSEMOVE", "INBETWEEN_MOUSEMOVE"}:
                     if event.type == "RIGHTMOUSE" and event.value == "RELEASE":
-                        context.window.cursor_modal_restore()
+                        # context.window.cursor_modal_restore() # Cursor restoration is now implicit or handled by Blender
                         # Check if menu should be called, even if navigation was briefly active
                         if self._count < addon_prefs.time:
                             self._callMenu = True
@@ -265,11 +249,11 @@ class RMN_OT_right_mouse_navigation(Operator):
             if self._focal_manager.is_transitioning and not self._focal_manager.is_exit_transition:
                 self._focal_manager.force_restore_original(context, addon_prefs)
 
-        # Ensure cursor is restored if modal was active
-        try:
-            context.window.cursor_modal_restore()
-        except Exception: # pylint: disable=broad-except
-            pass # May not have been set or already restored
+        # Ensure cursor is restored if modal was active - No longer explicitly managed here
+        # try:
+        #     context.window.cursor_modal_restore()
+        # except Exception: # pylint: disable=broad-except
+        #     pass # May not have been set or already restored
 
         # DO NOT remove the timer here.
         # The _perform_final_cleanup method is responsible for removing the timer

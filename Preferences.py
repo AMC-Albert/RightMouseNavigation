@@ -17,13 +17,6 @@ class RightMouseNavigationPreferences(AddonPreferences):
         max=1,
     )
 
-    reset_cursor_on_exit: BoolProperty(
-        name="Reset Cursor on Exit",
-        description="After exiting navigation, this determines if the cursor stays "
-        "where RMB was clicked (if unchecked) or resets to the center (if checked)",
-        default=False,
-    )
-
     return_to_ortho_on_exit: BoolProperty(
         name="Return to Orthographic on Exit",
         description="After exiting navigation, this determines if the Viewport "
@@ -67,27 +60,27 @@ class RightMouseNavigationPreferences(AddonPreferences):
     def draw(self, context):
         layout = self.layout
 
-        row = layout.row()
-        box = row.box()
-        box.label(text="Menu / Movement", icon="DRIVER_DISTANCE")
-        box.prop(self, "time")
+        row1 = layout.row() # First row for Timing
+        box_timing = row1.box()
+        box_timing.label(text="Menu / Movement", icon="DRIVER_DISTANCE") # Restored original label
+        box_timing.prop(self, "time")
+        # disable_camera_navigation is removed from this box
 
-        row = layout.row()
-        box = row.box()
-        box.label(text="Cursor", icon="ORIENTATION_CURSOR")
-        box.prop(self, "reset_cursor_on_exit")
-        box = row.box()
-        box.label(text="View", icon="VIEW3D")
-        box.prop(self, "return_to_ortho_on_exit")
-        box.prop(self, "walk_mode_focal_length_enable")  # New toggle above the slider
+        # The View box that was previously here is moved to the next row.
+
+        row2 = layout.row() # Second row for Camera and View settings
+
+        box_camera = row2.box() # Camera settings, in the old "Cursor" slot
+        box_camera.label(text="Camera", icon="CAMERA_DATA")
+        box_camera.prop(self, "disable_camera_navigation")
+
+        box_view = row2.box() # View settings, next to Camera settings
+        box_view.label(text="View", icon="VIEW3D")
+        box_view.prop(self, "return_to_ortho_on_exit")
+        box_view.prop(self, "walk_mode_focal_length_enable")
         if self.walk_mode_focal_length_enable:
-            box.prop(self, "walk_mode_focal_length") # Only show slider if enabled
-            box.prop(self, "walk_mode_transition_duration") # Show transition duration setting
-
-        row = layout.row()
-        box = row.box()
-        box.label(text="Camera", icon="CAMERA_DATA")
-        box.prop(self, "disable_camera_navigation")
+            box_view.prop(self, "walk_mode_focal_length")
+            box_view.prop(self, "walk_mode_transition_duration")
 
         # Keymap Customization
         import rna_keymap_ui
